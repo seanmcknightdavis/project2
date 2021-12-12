@@ -46,76 +46,219 @@ class_diag <- function(score, truth, positive, cutoff=.5){
 
 # Mining, Classification, Prediction
 
-## Name and EID here
+## Sean Davis smd3484
 
 ### Introduction 
+I initially wanted to use my previous data sets with S&P 500 and Avocados, but I had trouble coming up with a clear binary variable that might provide some interesting conclusions. So for this project, I found something a bit more friendly on Kaggle. This data set is called Customer Personality Analysis. It is described as "a detailed analysis of a company’s ideal customers that helps a business to better understand its customers and makes it easier for them to modify products according to their specific needs, behaviors and concerns." I decided I wanted to see if I could find any relations between the amount of wine bought or `MntWine`, `Income`, `Age`, and my created binary variable `HasKids` along with all the other numeric variables given in this data set. Note: `HasKids` means that the customers have kids or teens living at home, so some of the data for older customers will not represent whether they actually have kids that are grown.\
 
-Paragraph or two introducing your datasets and variables, why they are interesting to you, etc. See instructions for more information
+People\
+
+ID: Customer's unique identifier\
+Year_Birth: Customer's birth year\
+Education: Customer's education level\
+Marital_Status: Customer's marital status\
+Income: Customer's yearly household income\
+Kidhome: Number of children in customer's household\
+Teenhome: Number of teenagers in customer's household\
+Dt_Customer: Date of customer's enrollment with the company\
+Recency: Number of days since customer's last purchase\
+Complain: 1 if the customer complained in the last 2 years, 0 otherwise\
+
+Products\
+
+MntWines: Amount spent on wine in last 2 years\
+MntFruits: Amount spent on fruits in last 2 years\
+MntMeatProducts: Amount spent on meat in last 2 years\
+MntFishProducts: Amount spent on fish in last 2 years\
+MntSweetProducts: Amount spent on sweets in last 2 years\
+MntGoldProds: Amount spent on gold in last 2 years\
+
+Promotion\
+
+NumDealsPurchases: Number of purchases made with a discount\
+AcceptedCmp1: 1 if customer accepted the offer in the 1st campaign, 0 otherwise\
+AcceptedCmp2: 1 if customer accepted the offer in the 2nd campaign, 0 otherwise\
+AcceptedCmp3: 1 if customer accepted the offer in the 3rd campaign, 0 otherwise\
+AcceptedCmp4: 1 if customer accepted the offer in the 4th campaign, 0 otherwise\
+AcceptedCmp5: 1 if customer accepted the offer in the 5th campaign, 0 otherwise\
+Response: 1 if customer accepted the offer in the last campaign, 0 otherwise\
+
+Place\
+
+NumWebPurchases: Number of purchases made through the company’s website\
+NumCatalogPurchases: Number of purchases made using a catalogue\
+NumStorePurchases: Number of purchases made directly in stores\
+NumWebVisitsMonth: Number of visits to company’s website in the last month\
+
+ 
+
+```{R}
+
+```
 
 ```{R}
 library(tidyverse)
-# read your datasets in here, e.g., with read_csv()
+customers = read.table("~/project2/marketing_campaign.csv", sep = "\t", header = T)                                                  
 
-# if your dataset needs tidying, do so here
+#Trimming some of the Fat
+customers <- customers %>% mutate(TotalPurchases = NumWebPurchases + NumCatalogPurchases + NumStorePurchases)
+customers <- customers %>% na.omit
 
-# any other code here
+# Making my Binary variables. 
+customers$IsSingle = ifelse(customers$Marital_Status %in% c("Widow","Single","Divorced"),1,0)
+customers$HasKids = ifelse(customers$Kidhome > 0 | customers$Teenhome > 0 , 1 , 0)
+
+# Making an easier variable to analyze for age.
+customers$Age = 2016 - customers$Year_Birth
+
+#Making a more friendly dataset for our clustering.
+clustFriendly <- customers %>% select(c(Age, Income, TotalPurchases, MntWines))
+customers$HasKids = ifelse(customers$Kidhome > 0 | customers$Teenhome > 0 , 1 , 0)
+
+#Scaling my DataSet
+scaledClustFriendly <- scale(clustFriendly)
+
+
+
 ```
 
 ### Cluster Analysis
 
 ```{R}
 library(cluster)
-# clustering code here
+
+## Finding out best k value with sil width
+sil_width<-vector() 
+for(i in 2:10){  
+  kms <- kmeans(scaledClustFriendly,centers=i) 
+  sil <- silhouette(kms$cluster,dist(scaledClustFriendly)) 
+  sil_width[i]<-mean(sil[,3]) 
+}
+
+ggplot()+geom_line(aes(x=1:10,y=sil_width))+scale_x_continuous(name="k",breaks=1:10)
+
+
+pamResult <- pam(scaledClustFriendly,k = 2)
+
+
+pamClust <- clustFriendly %>% mutate(cluster=as.factor(pamResult$clustering))
+
+##Visualizing Clusters
+pamClust %>% ggplot(aes(Age, MntWines, color = cluster)) + geom_point()
+pamClust %>% ggplot(aes(Income, MntWines, color = cluster)) + geom_point()
+pamClust %>% ggplot(aes(TotalPurchases, MntWines, color = cluster)) + geom_point()
+pamClust %>% ggplot(aes(Income, TotalPurchases, color = cluster)) + geom_point()
+
+
+
+
 ```
 
-Discussion of clustering here
-    
+So I was hoping to find some relation between age and the amount of wine purchases, but they seem pretty independent of one another. I think the clusters are forming more around income and amount of purchases, including wine. I tried these clusters before scaling, and it showed a pretty clear dividing line showed around the 50000 income mark on our clusters. After scaling, the line got a bit blurred, but it is pretty similar regardless. I would say that based on this clustering the correlation seems to be most prevalent between how much money customers makes and how much they spend on wine. Shocking, I know. 
     
 ### Dimensionality Reduction with PCA
 
 ```{R}
-# PCA code here
+custPCA <- princomp(scaledClustFriendly)
+
+summary(custPCA, loadings = T)
+
+eigval<- custPCA$sdev^2 #square to convert SDs to eigenvalues
+varprop=round(eigval/sum(eigval), 2)
+
+round(cumsum(eigval)/sum(eigval), 2)
+
+ggplot() + geom_bar(aes(y=varprop, x = 1:4), stat="identity") + geom_path(aes(y = varprop, x = 1:4))
+# so 2 PCs
+
+
+library(factoextra)
+fviz_pca_biplot(custPCA)
 ```
 
-Discussions of PCA here. 
+Similar to what we discussed before, PC1 shows some pretty positive correlation between the amount of money spent on wine, the total purchases made, and the income of an individual. There is a very slight positive correlation between age and the other values, but it is almost negligible. PC2 demonstrates a slight negative correlation between age, total purchases, and amount spent on wine. The total cumulative proportion of variance at PC2 is 86% of the total variance. 
 
 ###  Linear Classifier
 
 ```{R}
-# linear classifier code here
+## Making a numerical Dataset from the original customers df without many of the redundant and superfluous data points like the ones associated with promotions.
+
+linCuts <- customers %>% select(is.numeric) %>% select(-c(ID,Year_Birth,Kidhome,Teenhome,Recency,MntGoldProds,TotalPurchases)) %>% select(-c(12:18))
+
+library(caret)
+
+fit <- glm(HasKids ~.,data = linCuts, family = "binomial")
+score <- predict(fit,linCuts)
+class_diag(score,linCuts$HasKids,positive = 1)
+
+table(truth= factor(linCuts$HasKids==1, levels=c("TRUE","FALSE")),
+      prediction= factor(score[]>.5, levels=c("TRUE","FALSE")))
+
 ```
 
 ```{R}
-# cross-validation of linear classifier here
+set.seed(2222)
+cv <- trainControl(method="cv", number = 5, classProbs = T, savePredictions = T)
+fit <- train(HasKids ~ ., data=linCuts, trControl=cv, method="glm")
+class_diag(fit$pred$pred, fit$pred$obs, positive=1)
 ```
 
-Discussion here
+So this model is trying to predict whether or not the customer has kids at home based on all the other variables in the data set. The model is predicting decently well with an area under the curve of .9237 after cross validation. There are signs of overfitting since the AUC is a tad lower after CV, but overall I think it is an okay model for predicting whether the customer has kids at home.
 
 ### Non-Parametric Classifier
 
 ```{R}
 library(caret)
-# non-parametric classifier code here
+knn_fit <- knn3(factor(HasKids==1,levels=c("TRUE","FALSE")) ~ ., data = linCuts, k = 5)
+y_hat_knn <- predict(knn_fit,linCuts)
+
+
+class_diag(y_hat_knn[,1],linCuts$HasKids, positive=1)
+
+table(truth= factor(linCuts$HasKids==1, levels=c("TRUE","FALSE")),
+      prediction= factor(y_hat_knn[,1]>.5, levels=c("TRUE","FALSE")))
+
+
 ```
 
 ```{R}
-# cross-validation of np classifier here
+set.seed(2222)
+cv <- trainControl(method="cv", number = 5, classProbs = T, savePredictions = T)
+fit <- train(HasKids ~ ., data=linCuts, trControl=cv, method="knn")
+class_diag(fit$pred$pred, fit$pred$obs, positive=1)
 ```
 
-Discussion
+So this model seems to be much worse at predicting whether the customer has kids at home based on the AUC of .8194. There also seems to be a huge case of overfitting since the difference between the initial AUC and the CV AUC is quite large from .926 to .819. I would say that the linear model does a better job at predicting in this case.
 
 
 ### Regression/Numeric Prediction
 
 ```{R}
-# regression model code here
+fit<-lm(Age~.,data=linCuts) 
+yhat<-predict(fit) 
+mean((linCuts$Age-yhat)^2)
 ```
 
 ```{R}
-# cross-validation of regression model here
-```
+set.seed(1234)
+k=5 
+data<-linCuts[sample(nrow(linCuts)),] 
+folds<-cut(seq(1:nrow(linCuts)),breaks=k,labels=F) 
+diags<-NULL
+for(i in 1:k){
+  train<-data[folds!=i,]
+  test<-data[folds==i,]
+  
+  fit<-lm(Age~.,data=train)
+ 
+  yhat<-predict(fit,newdata=test)
+  
+  diags<-mean((test$Age-yhat)^2) 
+}
+mean(diags)
 
-Discussion
+```
+For this model I'm trying to predict Age from the other numeric variables in the data set. Truthfully, I have a hard time interpreting MSE, but I would say that the values around 130 seem quite large. So I don't think this model is doing the best job at predicting our age of customers. But the MSE is lower in the CV, so I believe the model is not overfitting at all. 
 
 ### Python 
 
@@ -124,14 +267,23 @@ library(reticulate)
 ```
 
 ```{python}
-# python code here
-```
 
-Discussion
+
+pyCust = r.customers
+pyCust.Education = pyCust.Education.str.upper()
+pyCust
+
+
+```
+```{R}
+customers <- py$pyCust
+customers
+```
+Here I simply interpreted our data set in python and then changed the Education column to all uppercase and then interpreted that data set back into our original r data set. Pretty useful tool.
 
 ### Concluding Remarks
 
-Include concluding remarks here, if any
+I understand the power that these models have and see the utility that they have in the real world. I am excited to understand them better and do more projects independently like this in the future. Thanks for the great class!
 
 
 
